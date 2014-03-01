@@ -1790,7 +1790,107 @@ class Index(IndexOpsMixin, PandasObject):
             return result
 
         # 2 multi-indexes
-        raise NotImplementedError("merging with both multi-indexes is not implemented")
+        left_values = other.get_level_values(jl)
+        left_joined, left_lidx, left_ridx = self._join_level(left_values, jl, how=how,
+                                                             return_indexers=True)
+
+        right_values = self.get_level_values(jl)
+        right_joined, right_lidx, right_ridx = other._join_level(right_values, jl, how=how,
+                                                                 return_indexers=True)
+
+        # new levels
+        levels = list(left_joined.levels)
+        #print(levels)
+        levels_names = set([l.name for l in levels])
+        levels += [l for l in right_joined.levels if l.name not in levels_names]
+
+        # number of reps of labels
+        l = len(left_joined)*len(right_joined)
+
+        # new labels
+        sjl = self._get_level_number(jl)
+        left_indexer = np.array(sorted(list(set(np.arange(len(self.levels)))-set([sjl]))))
+        ojl = other._get_level_number(jl)
+        right_indexer = np.array(sorted(list(set(np.arange(len(other.levels)))-set([ojl]))))
+
+        def _create_tuple(left, right, index):
+            t = []
+            t.extend(list(np.array(left, dtype='object').take(left_indexer)))
+            t.append(left[index])
+            t.extend(list(np.array(right, dtype='object').take(right_indexer)))
+            return t
+
+        names = _create_tuple(self.names, other.names, sjl)
+
+        # new indexes, new indexers
+        tuples = []
+        lidx = []
+        ridx = []
+        if how == "inner":
+            l = 0
+            for left in left_joined:
+                r = 0
+                for right in right_joined:
+                    if left[sjl] == right[ojl]:
+                        lidx.append(left_lidx[l])
+                        ridx.append(right_lidx[r])
+                        tuples.append(tuple(_create_tuple(left, right, sjl)))
+                    r += 1
+                l += 1
+        elif how == "left" or how == "outer":  # We use 'left' strategy also as first step of 'outer' merge
+            l = 0
+            for left in left_joined:
+                r = 0
+                count = 0
+                for right in right_joined:
+                    if left[sjl] == right[ojl]:
+                        lidx.append(left_lidx[l])
+                        ridx.append(right_lidx[r])
+                        tuples.append(tuple(_create_tuple(left, right, sjl)))
+                        count += 1
+                    r += 1
+                if count == 0:
+                    lidx.append(left_lidx[l])
+                    ridx.append(-1)
+                    tuples.append(tuple(_create_tuple(left, [None]*len(right_joined), sjl)))
+                l += 1
+
+            if how == "outer":  # For outer merge, we already merged with 'left' strategy. Finish the results now with 'right' strategy
+                r = 0
+                for right in right_joined:
+                    l = 0
+                    count = 0
+                    for left in left_joined:
+                        if left[sjl] == right[ojl]:
+                            count += 1
+                            break
+                        l += 1
+                    if count == 0:
+                        lidx.append(-1)
+                        ridx.append(right_ridx[r])
+                        tuples.append(tuple(_create_tuple([None]*len(left_joined), right, sjl)))
+                        tuplex.back()[sjl] = right[ojl]
+                    r += 1
+        elif how == "right":
+            r = 0
+            for right in right_joined:
+                l = 0
+                count = 0
+                for left in left_joined:
+                    if left[sjl] == right[ojl]:
+                        lidx.append(left_lidx[l])
+                        ridx.append(right_lidx[r])
+                        tuples.append(tuple(_create_tuple(left, right, sjl)))
+                        count += 1
+                    l += 1
+                if count == 0:
+                    lidx.append(-1)
+                    ridx.append(right_ridx[r])
+                    tuples.append(tuple(_create_tuple([None]*len(left_joined), right, sjl)))
+                    tuplex.back()[sjl] = right[ojl]
+                r += 1
+
+        return MultiIndex.from_tuples(tuples, names=names), lidx, ridx
 
     def _join_non_unique(self, other, how='left', return_indexers=False):
         from pandas.tools.merge import _get_join_indexers
