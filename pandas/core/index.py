@@ -1800,7 +1800,6 @@ class Index(IndexOpsMixin, PandasObject):
 
         # new levels
         levels = list(left_joined.levels)
-        #print(levels)
         levels_names = set([l.name for l in levels])
         levels += [l for l in right_joined.levels if l.name not in levels_names]
 
@@ -1826,15 +1825,18 @@ class Index(IndexOpsMixin, PandasObject):
         tuples = []
         lidx = []
         ridx = []
+        def addToTuples(left_lidx, right_lidx, left, right):
+            lidx.append(left_lidx)
+            ridx.append(right_lidx)
+            tuples.append(tuple(_create_tuple(left, right, sjl)))
+
         if how == "inner":
             l = 0
             for left in left_joined:
                 r = 0
                 for right in right_joined:
                     if left[sjl] == right[ojl]:
-                        lidx.append(left_lidx[l])
-                        ridx.append(right_lidx[r])
-                        tuples.append(tuple(_create_tuple(left, right, sjl)))
+                        addToTuples(left_lidx[l], right_lidx[r], left, right)
                     r += 1
                 l += 1
         elif how == "left" or how == "outer":  # We use 'left' strategy also as first step of 'outer' merge
@@ -1844,9 +1846,7 @@ class Index(IndexOpsMixin, PandasObject):
                 count = 0
                 for right in right_joined:
                     if left[sjl] == right[ojl]:
-                        lidx.append(left_lidx[l])
-                        ridx.append(right_lidx[r])
-                        tuples.append(tuple(_create_tuple(left, right, sjl)))
+                        addToTuples(left_lidx[l], right_lidx[r], left, right)
                         count += 1
                     r += 1
                 if count == 0:
@@ -1868,27 +1868,13 @@ class Index(IndexOpsMixin, PandasObject):
                     if count == 0:
                         lidx.append(-1)
                         ridx.append(right_ridx[r])
-                        tuples.append(tuple(_create_tuple([None]*len(left_joined), right, sjl)))
-                        tuplex.back()[sjl] = right[ojl]
+                        temp = [None]*len(left_joined)
+                        temp[sjl] = right[ojl]
+                        tuples.append(tuple(_create_tuple(temp, right, sjl)))
                     r += 1
         elif how == "right":
-            r = 0
-            for right in right_joined:
-                l = 0
-                count = 0
-                for left in left_joined:
-                    if left[sjl] == right[ojl]:
-                        lidx.append(left_lidx[l])
-                        ridx.append(right_lidx[r])
-                        tuples.append(tuple(_create_tuple(left, right, sjl)))
-                        count += 1
-                    l += 1
-                if count == 0:
-                    lidx.append(-1)
-                    ridx.append(right_ridx[r])
-                    tuples.append(tuple(_create_tuple([None]*len(left_joined), right, sjl)))
-                    tuplex.back()[sjl] = right[ojl]
-                r += 1
+            a, b, c = other._join_multi(self, "left", return_indexers) # use 'left' strategy and swap return values
+            return a, c, b
 
         return MultiIndex.from_tuples(tuples, names=names), lidx, ridx
 

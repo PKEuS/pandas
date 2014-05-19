@@ -1229,6 +1229,64 @@ class TestMergeMulti(tm.TestCase):
         result = household.join(log_return, how='outer')
         assert_frame_equal(result,expected)
 
+    def test_join_multi_levels3(self):
+        # some more advanced merges
+        # GH6360
+        first = DataFrame(dict(colA = [1,   2,   3,   3,   4],
+                               colB = ["a", "b", "c", "d", "d"],
+                               colC = [1.1, 1.2, 1.3, 1.4, 1.5]),
+                          columns = ['colA','colB','colC']).set_index(['colB','colC'])
+
+        second = DataFrame(dict(colB = ["b", "b", "e", "d"],
+                                colD = [10,  20,  30,  40],
+                                colE = ["x", "x", "z", "y"]),
+                           columns = ['colB','colD','colE']).set_index(['colB','colD','colE'])
+
+        expected = DataFrame(dict(colA = [2,   2,   3,   4],
+                                  colB = ["b", "b", "d", "d"],
+                                  colC = [1.2, 1.2, 1.4, 1.5],
+                                  colD = [10,  20,  40,  40],
+                                  colE = ["x", "x", "y", "y"]),
+                           columns = ['colA', 'colB','colC','colD','colE']
+            )
+        expected_a = expected.set_index(['colC', 'colB','colD', 'colE'])
+        expected_b = expected.set_index(['colD', 'colE', 'colB', 'colC'])
+
+        result = first.join(second, how='inner')
+        assert_frame_equal(result, expected_a)
+
+        result = second.join(first, how='inner')
+        assert_frame_equal(result, expected_b)
+
+
+        expected = DataFrame(dict(colA = [1,    2,    2,    3,    3,    4],
+                                  colB = ["a",  "b",  "b",  "c",  "d",  "d"],
+                                  colC = [1.1,  1.2,  1.2,  1.3,  1.4,  1.5],
+                                  colD = [None, 10,   20,   None, 40,   40],
+                                  colE = [None, "x",  "x",  None, "y",  "y"]),
+                             columns = ['colA', 'colB','colC','colD','colE']
+            ).set_index(['colC', 'colB','colD', 'colE'])
+
+        result = first.join(second, how='left')
+        assert_frame_equal(result, expected)
+
+        result = second.join(first, how='right')
+        assert_frame_equal(result, expected)
+
+
+        expected = DataFrame(dict(colA = [1,    2,    2,    3,    3,    4,   None],
+                                  colB = ["a",  "b",  "b",  "c",  "d",  "d", "e"],
+                                  colC = [1.1,  1.2,  1.2,  1.3,  1.4,  1.5, None],
+                                  colD = [None, 10,   20,   None, 40,   40,  30],
+                                  colE = [None, "x",  "x",  None, "y",  "y", "z"]),
+                             columns = ['colA', 'colB','colC','colD','colE']
+            ).set_index(['colC', 'colB','colD', 'colE'])
+
+        result = first.join(second, how='outer')
+        assert_frame_equal(result, expected)
+
+
+
 def _check_join(left, right, result, join_col, how='left',
                 lsuffix='_x', rsuffix='_y'):
 
